@@ -25,7 +25,7 @@ parameter_file = "./parameters.h5"
 if os.path.exists('./lightning_logs/'):
     shutil.rmtree('./lightning_logs/')
 
-num_nns = 50 # goal for this run
+num_nns = 300 # goal for this run
 nns_saved = 0 # so far
 num_trained = 0 # so far
 
@@ -70,6 +70,7 @@ while nns_saved < num_nns and not emergency_stop:
         enable_progress_bar=False,
         enable_model_summary=False,
         log_every_n_steps=3,
+        gpus=int(torch.cuda.is_available()),
     )
     trainer.fit(model=model, datamodule=datamodule)
 
