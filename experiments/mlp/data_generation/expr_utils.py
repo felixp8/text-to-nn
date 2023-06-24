@@ -18,7 +18,7 @@ def map_inputs(expr, num_inputs, target_names):
 def build_paren_list(expr):
     """parse out parentheses"""
     if '(' not in expr and ')' not in expr:
-        return expr
+        return []
     paren_list = []
     paren_stack = []
     for i in range(len(expr)):
@@ -48,7 +48,8 @@ def reformat_square(expr):
         pre_str = expr[:start_idx]
         post_str = expr[end_idx+1:]
         arg = expr[square_paren[0]:square_paren[-1]+1]
-        expr = pre_str + f'{arg}^2' + reformat_square(post_str)
+        expr = pre_str + f'{arg}^2' + post_str
+        expr = reformat_square(expr)
     return expr
 
 
@@ -65,12 +66,13 @@ def clean_expr(expr):
     
     # 2)
     paren_list = np.array(build_paren_list(expr))
-    extra = np.all((paren_list[:, None, :] - paren_list[None, :, :]) == np.array([1, -1])[None, None, :], axis=-1)
-    remove = np.nonzero(extra)[0]
-    if len(remove) > 0:
-        remove_idx = np.sort(paren_list[remove, :].flatten())[::-1]
-        for idx in remove_idx:
-            expr = expr[:idx] + expr[idx+1:]
+    if paren_list.size > 0:
+        extra = np.all((paren_list[:, None, :] - paren_list[None, :, :]) == np.array([1, -1])[None, None, :], axis=-1)
+        remove = np.nonzero(extra)[0]
+        if len(remove) > 0:
+            remove_idx = np.sort(paren_list[remove, :].flatten())[::-1]
+            for idx in remove_idx:
+                expr = expr[:idx] + expr[idx+1:]
     
     # 3)
     expr = reformat_square(expr)
