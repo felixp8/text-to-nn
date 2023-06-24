@@ -45,6 +45,10 @@ if os.path.exists(f'./gpu{gpu_idx:02d}/'):
     shutil.rmtree(f'./gpu{gpu_idx:02d}/')
 os.mkdir(f'./gpu{gpu_idx:02d}/')
 
+if not os.path.exists(expression_file):
+    with open(expression_file, 'a') as f:
+        f.write(',expr,index,best_mse_loss,best_scaled_mse_loss\n')
+
 num_nns = int_arg or 300 # goal for this run
 nns_saved = 0 # so far
 num_trained = 0 # so far

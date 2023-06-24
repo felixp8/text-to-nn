@@ -14,11 +14,15 @@ def eval_expr(expr: str, inputs: list):
 def validate_expr(expr: str, n_inputs: int, n_samples: int = 100):
     if not any([(f'i{n}' in expr) for n in range(n_inputs)]):
         raise ValueError("Sampled expression is constant")
+    outputs = []
     for _ in range(n_samples):
         inputs_sampled = np.random.normal(loc=0., scale=10., size=(n_inputs,))
         output = eval_expr(expr, inputs_sampled)
         if output == 'nan':
             raise ValueError(f"Sampled expression {expr} errored for inputs {inputs_sampled.tolist()}")
+        outputs.append(output)
+    if np.var(outputs) < 1e-4:
+        raise ValueError(f"Sampled expression {expr} output variance too low, effectively constant for all inputs")
 
 class ExpressionDataModule(pl.LightningDataModule):
     def __init__(

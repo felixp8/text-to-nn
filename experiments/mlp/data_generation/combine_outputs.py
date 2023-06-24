@@ -4,12 +4,16 @@ import pandas as pd
 import h5py
 
 NUM_GPUS = 10
+MISSING_HEADER = True
 
 def roundup(x, base=50):
     return x if x % base == 0 else x + base - x % base
 
-base_csv = pd.read_csv('./expressions.csv')
+base_csv = pd.read_csv('./expressions.csv', header=(None if MISSING_HEADER else 0))
 base_h5f = h5py.File('./parameters.h5', 'a')
+
+if MISSING_HEADER:
+    base_csv.columns = ['Unnamed: 0', 'expr', 'index', 'best_mse_loss', 'best_scaled_mse_loss']
 
 assert base_h5f['nn_parameters'].shape[0] == roundup(base_csv.shape[0], 50)
 assert base_h5f['counter'][:].item() == base_csv.shape[0]
@@ -20,8 +24,11 @@ for i in range(1, NUM_GPUS):
     if not os.path.exists(f"./parameters_{i:02d}.h5"):
         continue
 
-    update_csv = pd.read_csv(f"./expressions_{i:02d}.csv")
+    update_csv = pd.read_csv(f"./expressions_{i:02d}.csv", header=(None if MISSING_HEADER else 0))
     update_h5f = h5py.File(f"./parameters_{i:02d}.h5", 'r')
+    
+    if MISSING_HEADER:
+        update_csv.columns = ['Unnamed: 0', 'expr', 'index', 'best_mse_loss', 'best_scaled_mse_loss']
 
     assert update_h5f['nn_parameters'].shape[0] == roundup(update_csv.shape[0], 50)
     assert update_h5f['counter'][:].item() == update_csv.shape[0]
