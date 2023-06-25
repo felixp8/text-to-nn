@@ -1,14 +1,23 @@
 import os
+import glob
 import numpy as np
 import pandas as pd
 import h5py
 
-NUM_GPUS = 10
-MISSING_HEADER = True
+MISSING_HEADER = False
+PARAMETER_COUNT = None
 
 def roundup(x, base=50):
     return x if x % base == 0 else x + base - x % base
 
+if not os.path.exists('./expressions.csv'):
+    with open('./expressions.csv', 'w') as f:
+        f.write(',expr,index,best_mse_loss,best_scaled_mse_loss\n')
+if not os.path.exists('./parameters.h5'):
+    assert PARAMETER_COUNT
+    with h5py.File('./parameters.h5', 'w') as h5f:
+        h5f.create_dataset('counter', data=np.array([0], dtype=int))
+        h5f.create_dataset('nn_parameters', (0, PARAMETER_COUNT), maxshape=(None, PARAMETER_COUNT))
 base_csv = pd.read_csv('./expressions.csv', header=(None if MISSING_HEADER else 0))
 base_h5f = h5py.File('./parameters.h5', 'a')
 
@@ -18,14 +27,19 @@ if MISSING_HEADER:
 assert base_h5f['nn_parameters'].shape[0] == roundup(base_csv.shape[0], 50)
 assert base_h5f['counter'][:].item() == base_csv.shape[0]
 
-for i in range(1, NUM_GPUS):
-    if not os.path.exists(f"./expressions_{i:02d}.csv"):
-        continue
-    if not os.path.exists(f"./parameters_{i:02d}.h5"):
-        continue
+run_dirs = sorted(glob.glob('./run-*-*-*-*-*/'))
 
-    update_csv = pd.read_csv(f"./expressions_{i:02d}.csv", header=(None if MISSING_HEADER else 0))
-    update_h5f = h5py.File(f"./parameters_{i:02d}.h5", 'r')
+print(len(run_dirs))
+
+for run_dir in run_dirs:
+    if not os.path.exists(f"{run_dir}expressions.csv"):
+        continue
+    if not os.path.exists(f"{run_dir}parameters.h5"):
+        continue
+    print(run_dir)
+
+    update_csv = pd.read_csv(f"{run_dir}expressions.csv", header=(None if MISSING_HEADER else 0))
+    update_h5f = h5py.File(f"{run_dir}parameters.h5", 'r')
     
     if MISSING_HEADER:
         update_csv.columns = ['Unnamed: 0', 'expr', 'index', 'best_mse_loss', 'best_scaled_mse_loss']

@@ -1,18 +1,18 @@
 import os, shutil, sys
 
+int_arg = None
 if len(sys.argv) > 1:
     try:
         int_arg = int(sys.argv[1])
     except:
         int_arg = None
         
+run_dir = None
 if len(sys.argv) > 2:
     try:
-        gpu_idx = int(sys.argv[2])
+        run_dir = str(sys.argv[2])
     except:
-        gpu_idx = 0
-
-os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_idx)
+        run_dir = None
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,7 @@ import pytorch_lightning as pl
 import logging
 import warnings
 import h5py
+import uuid
 from pathlib import Path
 from datetime import datetime
 
@@ -30,20 +31,28 @@ from datamodule import ExpressionDataModule
 logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore", category=pl.utilities.warnings.PossibleUserWarning)
 
+if run_dir is None:
+    run_dir = 'run-' + str(uuid.uuid4())
+    retry_count = 0
+    while os.path.exists(f'./{run_dir}/') and retry_count < 5:
+        run_dir = uuid.uuid4()
+        retry_count += 1
+    if retry_count == 5:
+        print("somehow failed to choose run dir")
+        exit(1)
+    elif retry_count > 0:
+        print("WARNING: had to retry for unique run dir. concerning.")
+
+if not os.path.exists(f'./{run_dir}/'):
+    os.mkdir(f'./{run_dir}/')
+os.chdir(f'./{run_dir}/')
+
 # expression_list = []
 # parameter_list = []
 # loss_list = []
 
-if gpu_idx == 0:
-    expression_file = "./expressions.csv"
-    parameter_file = "./parameters.h5"
-else:
-    expression_file = f"./expressions_{gpu_idx:02d}.csv"
-    parameter_file = f"./parameters_{gpu_idx:02d}.h5"
-
-if os.path.exists(f'./gpu{gpu_idx:02d}/'):
-    shutil.rmtree(f'./gpu{gpu_idx:02d}/')
-os.mkdir(f'./gpu{gpu_idx:02d}/')
+expression_file = "./expressions.csv"
+parameter_file = "./parameters.h5"
 
 if not os.path.exists(expression_file):
     with open(expression_file, 'a') as f:
@@ -59,11 +68,11 @@ success_rate = 1.0
 emergency_stop = False
 
 while nns_saved < num_nns and not emergency_stop:
-    os.mkdir(f'./gpu{gpu_idx:02d}/lightning_logs/')
+    os.mkdir(f'./lightning_logs/')
 
     model = MLPWrapper(
         input_dim=3,
-        hidden_dims=[16,16,16,],
+        hidden_dims=[16,16,],
         output_dim=1,
         activation="relu",
         bias=True,
@@ -76,22 +85,32 @@ while nns_saved < num_nns and not emergency_stop:
         dataset_size=1024,
         split_ratios=[0.625, 0.25, 0.125],
         expr_list=[],
-        # expr_list=['((abs(i1) - i1) - abs(square(-1.0038007697015474) - (cos(i1 / sin(i2)) / -0.42509212495347687)))'],
         reloadable=True,
-        sampler_kwargs={"depth_decay": 0.5, "var_decay": 0.05,}
+        sampler_kwargs={
+            "depth_decay": 0.3, 
+            "var_decay": 0.0,
+            "const_prob": 0.0, 
+            "modifier_prob": 0.0,
+            "leaf_prob": 0.05,
+            "operators": ["+", "-", "*"],
+            # "modifiers": [],
+            "operator_probs": [1./3, 1./3, 1./3],
+            # "modifier_probs": [],
+            "const_rounding": 0,
+        }
     )
 
     print(str(datetime.now()) + f': Model {num_trained}')
     print(datamodule.expr_list)
 
     trainer = pl.Trainer(
-        default_root_dir=f"./gpu{gpu_idx:02d}/",
+        default_root_dir=f"./",
         enable_checkpointing=True,
-        max_epochs=4000,
+        max_epochs=3000,
         reload_dataloaders_every_n_epochs=10,
-        logger=[pl.loggers.CSVLogger(save_dir=f"./gpu{gpu_idx:02d}/")],
+        logger=[pl.loggers.CSVLogger(save_dir=f"./")],
         callbacks=[
-            pl.callbacks.EarlyStopping(monitor="valid/loss", patience=500, mode="min"),
+            pl.callbacks.EarlyStopping(monitor="valid/loss", patience=500, mode="min", stopping_threshold=1e-4),
             pl.callbacks.ModelCheckpoint(save_last=False, save_top_k=1, monitor="valid/loss", mode="min")
         ],
         enable_progress_bar=False,
@@ -101,7 +120,7 @@ while nns_saved < num_nns and not emergency_stop:
     )
     trainer.fit(model=model, datamodule=datamodule)
 
-    log_df = pd.read_csv(f'./gpu{gpu_idx:02d}/lightning_logs/version_0/metrics.csv')
+    log_df = pd.read_csv(f'./lightning_logs/version_0/metrics.csv')
     best_loss = log_df['valid/loss'].min()
 
     scaling = torch.var(datamodule.val.tensors[1])
@@ -114,7 +133,7 @@ while nns_saved < num_nns and not emergency_stop:
         success_rate = success_rate * 0.95
 
     else:
-        file_names = os.listdir(f'./gpu{gpu_idx:02d}/lightning_logs/version_0/checkpoints/')
+        file_names = os.listdir(f'./lightning_logs/version_0/checkpoints/')
         if len(file_names) != 1:
             raise ValueError(f"{file_names}")
 
@@ -122,9 +141,9 @@ while nns_saved < num_nns and not emergency_stop:
         print(f'Best epoch: {best_epoch}, last epoch: {model.current_epoch}')
 
         best_model = MLPWrapper.load_from_checkpoint(
-            f'./gpu{gpu_idx:02d}/lightning_logs/version_0/checkpoints/{file_names[0]}',
+            f'./lightning_logs/version_0/checkpoints/{file_names[0]}',
             input_dim=3,
-            hidden_dims=[16,16,16,],
+            hidden_dims=[16,16,],
             output_dim=1,
             activation="relu",
             bias=True,
@@ -161,6 +180,6 @@ while nns_saved < num_nns and not emergency_stop:
 
     print('')
 
-    shutil.rmtree(f"./gpu{gpu_idx:02d}/lightning_logs/")
+    shutil.rmtree(f"./lightning_logs/")
 
 

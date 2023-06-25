@@ -32,7 +32,19 @@ CONST_ROUNDING = 0
 
 ### Actual sampling function
 
-def expr_sampler(num_inputs, depth_decay=0.6, var_decay=0.2, const_prob=0.3, modifier_prob=0.3):
+def expr_sampler(
+    num_inputs, 
+    depth_decay=0.6, 
+    var_decay=0.2, 
+    const_prob=0.3, 
+    modifier_prob=0.3,
+    leaf_prob=0.0,
+    operators=OPERATORS,
+    modifiers=MODIFIERS,
+    operator_probs=OPERATOR_PROBS,
+    modifier_probs=MODIFIER_PROBS,
+    const_rounding=CONST_ROUNDING,
+):
     """Generates an arbitrary string of a expression/function of inputs.
     Essentially builds out a tree, with operators at the node between branches,
     and constants or input variables as leaves. Single-argument modifier functions
@@ -68,6 +80,11 @@ def expr_sampler(num_inputs, depth_decay=0.6, var_decay=0.2, const_prob=0.3, mod
     assert num_inputs > 0
     rel_probs = np.ones(num_inputs)
 
+    if const_rounding == 0:
+        round_const = lambda x: int(round(x))
+    else:
+        round_const = lambda x: round(x, const_rounding)
+
     # over-coded helper func for enforcing certain argument constraints
     def enforce_constraint(expr, constraint=None):
         if constraint is None:
@@ -83,44 +100,54 @@ def expr_sampler(num_inputs, depth_decay=0.6, var_decay=0.2, const_prob=0.3, mod
                 return expr
             else:
                 if (np.inf in constraint):
-                    expr = str(round(np.random.exponential() + math.ceil(constraint[0]), CONST_ROUNDING))
+                    expr = str(round_const(np.random.exponential() + math.ceil(constraint[0])))
                 elif (-np.inf in constraint):
-                    expr = str(round(math.floor(constraint[1]) - np.random.exponential(), CONST_ROUNDING))
+                    expr = str(round_const(math.floor(constraint[1]) - np.random.exponential()))
                 else: # TODO: make more reasonable ranges if this is ever necessary
-                    expr = str(round(np.random.uniform(math.ceil(constraint[0]), math.floor(constraint[1])), CONST_ROUNDING))
+                    expr = str(round_const(np.random.uniform(math.ceil(constraint[0]), math.floor(constraint[1]))))
             return expr
 
         if (np.inf in constraint) or (-np.inf in constraint): # one-sided
             modifier = np.random.choice(['square']) # could also use exp but...
             expr = f'{modifier}({expr})'
             if (-np.inf in constraint):
-                bound = round(math.floor(constraint[1]) - np.random.exponential(), CONST_ROUNDING)
-                expr = f'(-{expr} + {bound})'
+                if np.random.rand() < const_prob:
+                    bound = round_const(math.floor(constraint[1]) - np.random.exponential())
+                    expr = f'(-{expr} + {bound})'
+                else:
+                    expr = f'(-{expr})'
             else:
-                bound = round(math.ceil(constraint[0]) + np.random.exponential(), CONST_ROUNDING)
-                expr = f'({expr} + {bound})'
+                if np.random.rand() < const_prob:
+                    bound = round_const(math.ceil(constraint[0]) + np.random.exponential())
+                    expr = f'({expr} + {bound})'
+                else:
+                    expr = f'({expr})'
         else:
             modifier = np.random.choice(['sin', 'cos'])
             expr = f'{modifier}({expr})'
             max_range = (math.floor(constraint[1]) - math.ceil(constraint[0]))
-            samp_range = round(max_range * np.random.uniform(0.2, 1.0), CONST_ROUNDING)
-            center = round(np.random.uniform(
+            samp_range = round_const(max_range * np.random.uniform(0.2, 1.0))
+            center = round_const(np.random.uniform(
                 math.ceil(constraint[0] + samp_range / 2 + 1e-2), 
-                math.floor(constraint[1] - samp_range / 2 - 1e-2)), CONST_ROUNDING)
+                math.floor(constraint[1] - samp_range / 2 - 1e-2)))
             expr = f'({samp_range} * {expr} + {center})'
         return expr
 
     # recursive function to build tree
     def build_expr_tree(probs, depth=0):
+        if probs.sum() < 1e-6:
+            if np.random.rand() < (1 - const_prob):
+                return None, probs
+
         if np.random.rand() < modifier_prob:
-            modifier = np.random.choice(MODIFIERS, p=MODIFIER_PROBS)
+            modifier = np.random.choice(modifiers, p=modifier_probs)
         else:
             modifier = None
 
-        if np.random.rand() < (depth_decay ** depth):
-            root = np.random.choice(OPERATORS, p=OPERATOR_PROBS)
+        if np.random.rand() < ((1 - leaf_prob) * (depth_decay ** depth)):
+            root = np.random.choice(operators, p=operator_probs)
         else:
-            if np.random.rand() < (1 - const_prob):
+            if np.random.rand() < (1 - const_prob) and probs.sum() > 1e-6:
                 root = np.random.choice(len(probs), p=probs / probs.sum())
                 probs[root] *= var_decay
                 expr = f'i{root}'
@@ -141,17 +168,24 @@ def expr_sampler(num_inputs, depth_decay=0.6, var_decay=0.2, const_prob=0.3, mod
             right, probs = build_expr_tree(probs=probs, depth=depth+1)
             left, probs = build_expr_tree(probs=probs, depth=depth+1)
 
-        if OPERATOR_CONSTRAINTS.get(root, None):
-            constraint = OPERATOR_CONSTRAINTS.get(root)
-            left = enforce_constraint(left, constraint.get('left', None))
-            right = enforce_constraint(right, constraint.get('right', None))
-
-        expr = f'({left} {root} {right})'
+        if (left is None) and (right is None):
+            return None, probs
+        elif (left is None):
+            expr = f'{right}'
+        elif (right is None):
+            expr = f'{left}'
+        else:
+            if OPERATOR_CONSTRAINTS.get(root, None):
+                constraint = OPERATOR_CONSTRAINTS.get(root)
+                left = enforce_constraint(left, constraint.get('left', None))
+                right = enforce_constraint(right, constraint.get('right', None))
+            expr = f'({left} {root} {right})'
+        
         if modifier is not None:
             if MODIFIER_CONSTRAINTS.get(modifier, None):
                 expr = enforce_constraint(expr, MODIFIER_CONSTRAINTS.get(modifier))
-                if not expr.startswith('('):
-                    expr = f'({expr})'
+            if not expr.startswith('('):
+                expr = f'({expr})'
             expr = f'{modifier}{expr}'
         return expr, probs
 
@@ -162,9 +196,16 @@ if __name__ == "__main__":
     i0 = np.random.normal(0., 3.)
     i1 = np.random.normal(0., 3.)
     i2 = np.random.normal(0., 3.)
-    i3 = np.random.normal(0., 3.)
-    i4 = np.random.normal(0., 3.)
 
-    expr = expr_sampler(5, depth_decay=0.5, var_decay=0.05, const_prob=0.3)
+    expr = expr_sampler(
+        num_inputs=3, 
+        depth_decay=0.3, 
+        var_decay=0.0, 
+        const_prob=0.0,
+        modifier_prob=0.0,
+        leaf_prob=0.05,
+        operators=["+", "-", "*"],
+        operator_probs=[1/3, 1/3, 1/3],
+    )
     print(expr)
     print(eval(expr))
