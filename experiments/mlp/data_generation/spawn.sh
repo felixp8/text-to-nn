@@ -1,0 +1,10 @@
+CUDA_VISIBLE_DEVICES=0 python train.py 1000 > output0.txt & \
+CUDA_VISIBLE_DEVICES=1 python train.py 1000 > output1.txt & \
+CUDA_VISIBLE_DEVICES=2 python train.py 1000 > output2.txt & \
+CUDA_VISIBLE_DEVICES=3 python train.py 1000 > output3.txt & \
+CUDA_VISIBLE_DEVICES=4 python train.py 1000 > output4.txt & \
+CUDA_VISIBLE_DEVICES=5 python train.py 1000 > output5.txt & \
+CUDA_VISIBLE_DEVICES=6 python train.py 1000 > output6.txt & \
+CUDA_VISIBLE_DEVICES=7 python train.py 1000 > output7.txt & \
+CUDA_VISIBLE_DEVICES=8 python train.py 1000 > output8.txt & \
+CUDA_VISIBLE_DEVICES=9 python train.py 1000 > output9.txt &

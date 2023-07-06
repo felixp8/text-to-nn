@@ -71,33 +71,34 @@ while nns_saved < num_nns and not emergency_stop:
     os.mkdir(f'./lightning_logs/')
 
     model = MLPWrapper(
-        input_dim=3,
-        hidden_dims=[16,16,],
+        input_dim=2,
+        hidden_dims=[16,],
         output_dim=1,
         activation="relu",
         bias=True,
     )
 
+    TINY_EXPR = ["i0", "i1", "-i0", "-i1", "(i0 + i1)", "(i0 - i1)", "(i1 - i0)", "-(i0 + i1)"]
     datamodule = ExpressionDataModule(
-        input_dim=3,
+        input_dim=2,
         output_dim=1,
         batch_size=256,
         dataset_size=1024,
         split_ratios=[0.625, 0.25, 0.125],
-        expr_list=[],
+        expr_list=[TINY_EXPR[np.random.choice(8)]],
         reloadable=True,
-        sampler_kwargs={
-            "depth_decay": 0.3, 
-            "var_decay": 0.0,
-            "const_prob": 0.0, 
-            "modifier_prob": 0.0,
-            "leaf_prob": 0.05,
-            "operators": ["+", "-", "*"],
-            # "modifiers": [],
-            "operator_probs": [1./3, 1./3, 1./3],
-            # "modifier_probs": [],
-            "const_rounding": 0,
-        }
+        # sampler_kwargs={
+        #     "depth_decay": 0.3, 
+        #     "var_decay": 0.0,
+        #     "const_prob": 0.0, 
+        #     "modifier_prob": 0.0,
+        #     "leaf_prob": 0.05,
+        #     "operators": ["+", "-", "*"],
+        #     # "modifiers": [],
+        #     "operator_probs": [1./3, 1./3, 1./3],
+        #     # "modifier_probs": [],
+        #     "const_rounding": 0,
+        # }
     )
 
     print(str(datetime.now()) + f': Model {num_trained}')
@@ -142,8 +143,8 @@ while nns_saved < num_nns and not emergency_stop:
 
         best_model = MLPWrapper.load_from_checkpoint(
             f'./lightning_logs/version_0/checkpoints/{file_names[0]}',
-            input_dim=3,
-            hidden_dims=[16,16,],
+            input_dim=2,
+            hidden_dims=[16,],
             output_dim=1,
             activation="relu",
             bias=True,
