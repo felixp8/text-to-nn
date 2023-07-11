@@ -119,7 +119,7 @@ def make_dataloader(
         data = Data(
             x=node_features,
             edge_idx=base_edge_idx,
-            edge_attr=edge_attr,
+            edge_attr=edge_features,
             y=torch.from_numpy(expressions[i:(i+1),None]),
         )
         data_list.append(data)
