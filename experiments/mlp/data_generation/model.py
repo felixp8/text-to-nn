@@ -37,6 +37,7 @@ class MLP(nn.Module):
         layerlist.append(nn.Linear(dims[-2], dims[-1], bias=True))
 
         self.layers = nn.Sequential(*layerlist)
+        self.dims = dims
 
     def forward(self, x):
         return self.layers(x)
